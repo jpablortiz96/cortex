@@ -18,6 +18,7 @@ from models.trade import CortexEvent, EventType, Decision, AgentRole
 from tools.market_data import get_full_market_data
 from tools.web3_client import CortexWeb3Client
 from tools.eip712_signer import EIP712Signer
+from tools.erc8004_client import ERC8004Client
 
 
 class PortfolioState:
@@ -81,6 +82,17 @@ class Orchestrator:
         # Initialize Web3 client (connects to smart contracts)
         self.web3_client = CortexWeb3Client()
         self.eip712 = EIP712Signer()
+
+        # ERC-8004 hackathon registry client
+        import json as _json, os as _os
+        self.erc8004 = ERC8004Client()
+        _reg_path = _os.path.join(_os.path.dirname(__file__), 'erc8004_registration.json')
+        self._erc8004_agent_id = None
+        if _os.path.exists(_reg_path):
+            with open(_reg_path) as _f:
+                _reg = _json.load(_f)
+            self._erc8004_agent_id = _reg.get('agent_id')
+            print(f'[ERC-8004] Loaded agent_id={self._erc8004_agent_id} from registration')
 
         # Initialize agents
         self.strategist = StrategistAgent()
@@ -281,6 +293,27 @@ class Orchestrator:
                     },
                 )
                 await self.emit_event(audit_event)
+
+        # ERC-8004 Hackathon: record reputation signal after every cycle
+        if self._erc8004_agent_id:
+            try:
+                import asyncio as _aio
+                loop = _aio.get_event_loop()
+                decision = cycle_result.get('decision', 'HOLD')
+                asset = cycle_result.get('asset', 'BTC')
+                score = 80 if decision in ('BUY', 'SELL') else 60
+                endpoint = 'https://web-production-df8ac.up.railway.app/api/agents/strategist/metadata'
+                tag1 = 'trade'
+                tag2 = asset.upper()[:10]
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.erc8004.record_trade_signal(
+                        self._erc8004_agent_id, score, tag1, tag2, endpoint
+                    )
+                )
+                print(f'[ERC-8004] Reputation signal sent: score={score} tag={tag1}/{tag2}')
+            except Exception as _e:
+                print(f'[ERC-8004] Signal failed (non-fatal): {_e}')
 
         # Summary
         print(f"\n{'-'*40}")
