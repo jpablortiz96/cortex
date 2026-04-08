@@ -1,0 +1,9 @@
+{
+  "agent_id": 2827,
+  "tx_hash": "6848da5e99f49d9ee239688aee92d3d70af77ef1298ed9231fbe0d82bcdac4e3",
+  "agent_uri": "https://web-production-df8ac.up.railway.app/api/agents/strategist/metadata",
+  "identity_registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "reputation_registry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  "network": "sepolia",
+  "explorer_link": "https://sepolia.etherscan.io/tx/6848da5e99f49d9ee239688aee92d3d70af77ef1298ed9231fbe0d82bcdac4e3"
+}
