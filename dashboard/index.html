@@ -419,7 +419,10 @@ function App(){
  
     const connect=useCallback(()=>{
         setWs('connecting');
-        const w=new WebSocket('ws://localhost:8000/ws');
+        const BACKEND=window.location.hostname==='localhost'
+            ?'ws://localhost:8000'
+            :'wss://web-production-df8ac.up.railway.app';
+        const w=new WebSocket(BACKEND+'/ws');
         w.onopen=()=>{setWs('connected');wsRef.current=w;};
         w.onclose=()=>{setWs('disconnected');wsRef.current=null;setTimeout(connect,3000);};
         w.onerror=()=>{setWs('disconnected');};
