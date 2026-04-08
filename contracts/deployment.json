@@ -1,0 +1,20 @@
+{
+  "network": {
+    "name": "sepolia",
+    "chainId": 11155111
+  },
+  "deployer": "0xebbaaCA4b9256234F0EcAd41fC4fd15Da7e344E7",
+  "contracts": {
+    "agentRegistry": "0x108571d9bC12197a8c8E78C4A6eC30C424643FB0",
+    "validationRegistry": "0x4f2529D5D38836189408726B18bDFeDe87BeBDD9"
+  },
+  "agents": {
+    "strategist": "1",
+    "risk_officer": "2",
+    "executor": "3",
+    "compliance": "4",
+    "auditor": "5"
+  },
+  "deployedAt": "2026-04-07T01:23:00.986Z",
+  "explorerBaseUrl": "https://etherscan.io"
+}
