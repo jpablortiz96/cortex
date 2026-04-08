@@ -123,7 +123,7 @@ class CortexWeb3Client:
         self.agent_registry = None
         self.validation_registry = None
         self.agent_token_ids = {}
-        self.explorer_url = ""
+        self.explorer_url = "https://sepolia.etherscan.io"
         self.tx_log = []  # Track all transactions for dashboard
 
         if deployment_path is None:
