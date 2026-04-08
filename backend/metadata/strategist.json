@@ -1,0 +1,42 @@
+{
+  "name": "CORTEX Strategist",
+  "description": "Analyzes real-time market data from Kraken CLI and generates trade proposals using momentum, RSI, and mean-reversion signals. Produces EIP-712 signed TradeIntent attestations for every proposal.",
+  "version": "1.0.0",
+  "protocol": "CORTEX Trading Desk Protocol",
+  "role": "strategist",
+  "agent_id": 1,
+  "model": "claude-sonnet-4-20250514",
+  "capabilities": [
+    "market_analysis",
+    "signal_generation",
+    "trade_proposal_creation",
+    "rsi_interpretation",
+    "momentum_detection",
+    "eip712_signing"
+  ],
+  "tools": ["kraken_cli_ticker", "kraken_rest_api", "eip712_signer"],
+  "risk_parameters": {
+    "min_confidence_threshold": 0.3,
+    "max_position_size_usd": 500,
+    "assets_covered": ["BTC", "ETH", "SOL"]
+  },
+  "endpoints": {
+    "websocket": "ws://localhost:8000/ws",
+    "api": "http://localhost:8000/api",
+    "metadata": "http://localhost:8000/api/agents/strategist/metadata"
+  },
+  "chain": {
+    "network": "ethereum_sepolia",
+    "chain_id": 11155111,
+    "agent_registry": "0x108571d9bC12197a8c8E78C4A6eC30C424643FB0",
+    "validation_registry": "0x4f2529D5D38836189408726B18bDFeDe87BeBDD9",
+    "token_id": 1
+  },
+  "erc8004_compliance": {
+    "identity_registered": true,
+    "eip712_signatures": true,
+    "validation_artifacts": true,
+    "eip712_domain": "CORTEX Trading Desk v1 chainId=11155111",
+    "signed_type": "TradeIntent"
+  }
+}

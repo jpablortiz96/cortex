@@ -1,0 +1,45 @@
+{
+  "name": "CORTEX Risk Officer",
+  "description": "Evaluates every trade proposal against hard risk limits. Can VETO any trade. Signs EIP-712 RiskAttestation for every decision — approvals and vetoes alike. Protects capital above all else.",
+  "version": "1.0.0",
+  "protocol": "CORTEX Trading Desk Protocol",
+  "role": "risk_officer",
+  "agent_id": 2,
+  "model": "claude-sonnet-4-20250514",
+  "capabilities": [
+    "risk_evaluation",
+    "trade_approval",
+    "trade_veto",
+    "position_size_validation",
+    "exposure_monitoring",
+    "eip712_signing"
+  ],
+  "tools": ["eip712_signer"],
+  "risk_parameters": {
+    "max_position_size_usd": 500,
+    "max_portfolio_exposure_pct": 30,
+    "max_single_asset_exposure_pct": 15,
+    "max_daily_drawdown_pct": 5,
+    "min_confidence_threshold": 0.4,
+    "max_risk_reward_ratio": 0.5
+  },
+  "endpoints": {
+    "websocket": "ws://localhost:8000/ws",
+    "api": "http://localhost:8000/api",
+    "metadata": "http://localhost:8000/api/agents/risk_officer/metadata"
+  },
+  "chain": {
+    "network": "ethereum_sepolia",
+    "chain_id": 11155111,
+    "agent_registry": "0x108571d9bC12197a8c8E78C4A6eC30C424643FB0",
+    "validation_registry": "0x4f2529D5D38836189408726B18bDFeDe87BeBDD9",
+    "token_id": 2
+  },
+  "erc8004_compliance": {
+    "identity_registered": true,
+    "eip712_signatures": true,
+    "validation_artifacts": true,
+    "eip712_domain": "CORTEX Trading Desk v1 chainId=11155111",
+    "signed_type": "RiskAttestation"
+  }
+}

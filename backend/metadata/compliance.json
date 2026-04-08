@@ -1,0 +1,45 @@
+{
+  "name": "CORTEX Compliance Monitor",
+  "description": "Runs post-trade compliance checks after every execution. Monitors portfolio exposure, daily PnL limits, and position concentration. Triggers circuit breaker if risk thresholds are breached.",
+  "version": "1.0.0",
+  "protocol": "CORTEX Trading Desk Protocol",
+  "role": "compliance",
+  "agent_id": 4,
+  "model": "claude-sonnet-4-20250514",
+  "capabilities": [
+    "exposure_monitoring",
+    "pnl_tracking",
+    "circuit_breaker",
+    "regulatory_compliance",
+    "alert_generation"
+  ],
+  "tools": [],
+  "risk_parameters": {
+    "max_portfolio_exposure_pct": 80,
+    "max_daily_drawdown_pct": 10,
+    "max_single_position_pct": 25,
+    "circuit_breaker_triggers": [
+      "daily_loss_exceeds_10pct",
+      "exposure_exceeds_80pct",
+      "single_position_exceeds_25pct"
+    ]
+  },
+  "endpoints": {
+    "websocket": "ws://localhost:8000/ws",
+    "api": "http://localhost:8000/api",
+    "metadata": "http://localhost:8000/api/agents/compliance/metadata"
+  },
+  "chain": {
+    "network": "ethereum_sepolia",
+    "chain_id": 11155111,
+    "agent_registry": "0x108571d9bC12197a8c8E78C4A6eC30C424643FB0",
+    "validation_registry": "0x4f2529D5D38836189408726B18bDFeDe87BeBDD9",
+    "token_id": 4
+  },
+  "erc8004_compliance": {
+    "identity_registered": true,
+    "eip712_signatures": false,
+    "validation_artifacts": true,
+    "note": "Records compliance_clear, compliance_alert, or circuit_breaker artifact after each cycle"
+  }
+}

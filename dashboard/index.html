@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORTEX — Autonomous Trading Desk</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+        :root {
+            --bg-primary: #060610;
+            --bg-secondary: #0c0c1a;
+            --bg-card: #0f0f1f;
+            --bg-elevated: #141428;
+            --border: #1a1a35;
+            --border-active: #2a2a50;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a0;
+            --text-dim: #555570;
+            --accent-blue: #4488ff;
+            --accent-cyan: #00d4aa;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-purple: #a855f7;
+            --accent-orange: #f97316;
+            --glow-blue: rgba(68,136,255,0.12);
+            --glow-green: rgba(34,197,94,0.12);
+            --glow-red: rgba(239,68,68,0.15);
+            --glow-cyan: rgba(0,212,170,0.12);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:var(--bg-primary); color:var(--text-primary); font-family:'IBM Plex Mono',monospace; overflow-x:hidden; }
+        .font-display { font-family:'Space Grotesk',sans-serif; }
+        ::-webkit-scrollbar { width:3px; }
+        ::-webkit-scrollbar-track { background:var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background:#333; border-radius:2px; }
+ 
+        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+        @keyframes blink { 0%,100%{opacity:1}50%{opacity:0} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)} }
+        @keyframes expandWidth { from{width:0}to{width:100%} }
+        @keyframes glowPulse { 0%,100%{box-shadow:0 0 8px var(--glow-cyan)}50%{box-shadow:0 0 20px var(--glow-cyan)} }
+        @keyframes scanline { 0%{transform:translateY(-100%)}100%{transform:translateY(100vh)} }
+        @keyframes vetoShake {
+            0%,100%{transform:translateX(0)} 
+            10%,30%,50%,70%,90%{transform:translateX(-2px)} 
+            20%,40%,60%,80%{transform:translateX(2px)}
+        }
+        .animate-pulse { animation:pulse 1.5s ease-in-out infinite; }
+        .animate-blink { animation:blink 1s step-end infinite; }
+        .animate-slideUp { animation:slideUp .3s ease-out; }
+        .animate-glow { animation:glowPulse 2s ease-in-out infinite; }
+        .animate-veto { animation:vetoShake .5s ease-in-out; }
+ 
+        .scanline {
+            position:fixed; top:0; left:0; right:0; height:2px; z-index:100; pointer-events:none;
+            background:linear-gradient(90deg,transparent,rgba(68,136,255,.03),transparent);
+            animation:scanline 8s linear infinite;
+        }
+        .noise {
+            position:fixed; inset:0; z-index:99; pointer-events:none; opacity:.015;
+            background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+    </style>
+</head>
+<body>
+<div class="scanline"></div>
+<div class="noise"></div>
+<div id="root"></div>
+ 
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback} = React;
+ 
+const AGENTS = {
+    strategist:{name:'STRATEGIST',icon:'◈',color:'var(--accent-blue)',glow:'var(--glow-blue)',desc:'Market Analysis & Signal Generation'},
+    risk_officer:{name:'RISK OFFICER',icon:'◆',color:'var(--accent-amber)',glow:'rgba(245,158,11,0.12)',desc:'Risk Evaluation & Trade Gating'},
+    executor:{name:'EXECUTOR',icon:'◇',color:'var(--accent-purple)',glow:'rgba(168,85,247,0.12)',desc:'Order Execution via Kraken CLI'},
+    compliance:{name:'COMPLIANCE',icon:'□',color:'var(--accent-green)',glow:'var(--glow-green)',desc:'Portfolio Health & Circuit Breakers'},
+    auditor:{name:'AUDITOR',icon:'⬡',color:'var(--accent-cyan)',glow:'var(--glow-cyan)',desc:'On-Chain Verification (ERC-8004)'},
+};
+ 
+/* ── Shared Styles ── */
+const card = {background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:6};
+const cardHover = {...card,transition:'all .3s',cursor:'default'};
+const label = {fontSize:10,fontWeight:500,color:'var(--text-dim)',letterSpacing:'0.08em',textTransform:'uppercase'};
+const mono = {fontFamily:'IBM Plex Mono, monospace'};
+ 
+/* ── Components ── */
+function StatusIndicator({status,color}){
+    const s = status==='thinking'||status==='acting';
+    return(
+        <span style={{display:'inline-flex',alignItems:'center',gap:4}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:s?color:'#444',
+                boxShadow:s?`0 0 8px ${color}`:'none',
+                animation:s?'pulse 1.5s ease-in-out infinite':'none'}}/>
+            <span style={{fontSize:9,color:s?color:'#555',letterSpacing:'0.1em'}}>{status.toUpperCase()}</span>
+        </span>
+    );
+}
+ 
+function AgentRow({role,status,lastEvent}){
+    const a=AGENTS[role]; if(!a) return null;
+    const active=status==='thinking'||status==='acting';
+    return(
+        <div style={{...card,padding:'10px 12px',display:'flex',alignItems:'center',gap:12,
+            borderColor:active?a.color+'40':'var(--border)',
+            boxShadow:active?`0 0 15px ${a.glow}`:'none',
+            transition:'all .3s'}}>
+            <span style={{fontSize:16,color:a.color,width:20,textAlign:'center',fontWeight:700}}>{a.icon}</span>
+            <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <span className="font-display" style={{fontSize:12,fontWeight:600,color:active?a.color:'var(--text-primary)',letterSpacing:'0.02em'}}>{a.name}</span>
+                    <StatusIndicator status={status} color={a.color}/>
+                </div>
+                {lastEvent ? (
+                    <p style={{fontSize:10,color:'var(--text-secondary)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastEvent}</p>
+                ):(
+                    <p style={{fontSize:10,color:'var(--text-dim)',marginTop:2}}>{a.desc}</p>
+                )}
+            </div>
+        </div>
+    );
+}
+ 
+function MarketCard({asset,data}){
+    if(!data) return null;
+    const up=data.change_24h_pct>=0;
+    const rsiHot=data.rsi_14>70; const rsiCold=data.rsi_14<30;
+    return(
+        <div style={{...card,padding:12,flex:1}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span className="font-display" style={{fontSize:14,fontWeight:700,color:'#fff'}}>{asset}</span>
+                <span style={{fontSize:11,fontWeight:600,color:up?'var(--accent-green)':'var(--accent-red)',
+                    background:up?'rgba(34,197,94,.08)':'rgba(239,68,68,.08)',
+                    padding:'2px 6px',borderRadius:3}}>
+                    {up?'▲':'▼'} {Math.abs(data.change_24h_pct).toFixed(2)}%
+                </span>
+            </div>
+            <div style={{marginTop:4}}>
+                <span className="font-display" style={{fontSize:22,fontWeight:700,color:'#fff',letterSpacing:'-0.02em'}}>
+                    ${data.price?.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+                </span>
+            </div>
+            <div style={{display:'flex',gap:12,marginTop:6}}>
+                <div>
+                    <span style={{...label,fontSize:9}}>RSI</span>
+                    <span style={{fontSize:12,fontWeight:600,marginLeft:4,
+                        color:rsiHot?'var(--accent-red)':rsiCold?'var(--accent-green)':'var(--text-primary)'}}>
+                        {data.rsi_14}
+                    </span>
+                    {rsiHot && <span style={{fontSize:8,color:'var(--accent-red)',marginLeft:3}}>OVERBOUGHT</span>}
+                    {rsiCold && <span style={{fontSize:8,color:'var(--accent-green)',marginLeft:3}}>OVERSOLD</span>}
+                </div>
+                <div>
+                    <span style={{...label,fontSize:9}}>VOL</span>
+                    <span style={{fontSize:12,fontWeight:500,marginLeft:4,color:'var(--text-secondary)'}}>{data.volatility_24h}%</span>
+                </div>
+            </div>
+            {data.prism_signal && (()=>{
+                const sig=data.prism_signal.toLowerCase();
+                const bullish=sig.includes('bullish');
+                const bearish=sig.includes('bearish');
+                const color=bullish?'var(--accent-green)':bearish?'var(--accent-red)':'var(--text-secondary)';
+                const bg=bullish?'rgba(34,197,94,.1)':bearish?'rgba(239,68,68,.1)':'rgba(148,163,184,.08)';
+                const label_=bullish?'AI BULLISH':bearish?'AI BEARISH':'AI NEUTRAL';
+                return(
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6}}>
+                        <span style={{fontSize:9,fontWeight:700,color,background:bg,padding:'2px 5px',borderRadius:3,letterSpacing:'0.05em'}}>{label_}</span>
+                        {data.prism_net_score!=null && <span style={{fontSize:9,color:'var(--text-secondary)'}}>score {data.prism_net_score>0?'+':''}{data.prism_net_score}</span>}
+                    </div>
+                );
+})()}
+        </div>
+    );
+}
+ 
+function Pipeline({currentFlow}){
+    const steps=[
+        {key:'proposal',label:'ANALYZE',agent:'strategist'},
+        {key:'risk',label:'RISK CHECK',agent:'risk_officer'},
+        {key:'execute',label:'EXECUTE',agent:'executor'},
+        {key:'compliance',label:'COMPLY',agent:'compliance'},
+        {key:'audit',label:'ON-CHAIN',agent:'auditor'},
+    ];
+    const vetoActive=currentFlow==='vetoed';
+    return(
+        <div style={{...card,padding:'12px 16px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <span style={label}>TRADE FLOW PIPELINE</span>
+                {vetoActive && (
+                    <span className="animate-veto" style={{fontSize:11,fontWeight:700,color:'var(--accent-red)',
+                        background:'rgba(239,68,68,.1)',padding:'2px 10px',borderRadius:3,border:'1px solid rgba(239,68,68,.3)'}}>
+                        ⊘ TRADE VETOED
+                    </span>
+                )}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:0}}>
+                {steps.map((step,i)=>{
+                    const ag=AGENTS[step.agent];
+                    const isActive=currentFlow===step.key;
+                    const isDone=steps.findIndex(s=>s.key===currentFlow)>i;
+                    const isVetoed=vetoActive&&step.key==='risk';
+                    const vetoedAfter=vetoActive&&i>1;
+                    const dotColor=isVetoed?'var(--accent-red)':isActive?ag.color:isDone?'var(--accent-green)':'#333';
+                    const dotShadow=isVetoed?'0 0 12px var(--glow-red)':isActive?`0 0 12px ${ag.glow}`:isDone?'0 0 6px var(--glow-green)':'none';
+                    return(
+                        <React.Fragment key={step.key}>
+                            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,opacity:vetoedAfter?.2:1,transition:'opacity .3s'}}>
+                                <div style={{width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                                    border:`2px solid ${dotColor}`,background:isActive||isVetoed?dotColor+'15':'transparent',
+                                    boxShadow:dotShadow,transition:'all .3s',transform:isActive?'scale(1.15)':'scale(1)'}}>
+                                    <span style={{fontSize:isVetoed?14:12,color:dotColor}}>{isVetoed?'⊘':ag.icon}</span>
+                                </div>
+                                <span style={{fontSize:8,fontWeight:600,letterSpacing:'.1em',
+                                    color:isVetoed?'var(--accent-red)':isActive?ag.color:isDone?'var(--accent-green)':'#444'}}>
+                                    {isVetoed?'VETOED':step.label}
+                                </span>
+                            </div>
+                            {i<steps.length-1&&(
+                                <div style={{flex:1,height:1,margin:'0 2px',marginBottom:16,
+                                    background:isVetoed&&i>=1?'rgba(239,68,68,.3)':isDone?'rgba(34,197,94,.25)':'#1a1a35',
+                                    transition:'background .5s'}}/>
+                            )}
+                        </React.Fragment>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+ 
+function Portfolio({portfolio}){
+    if(!portfolio) return null;
+    const pnlUp=portfolio.total_pnl>=0;
+    const expPct=Math.min(portfolio.total_exposure_pct||0,100);
+    const expColor=expPct>25?'var(--accent-red)':expPct>15?'var(--accent-amber)':'var(--accent-green)';
+    return(
+        <div style={{...card,padding:12}}>
+            <div style={{...label,marginBottom:8}}>PORTFOLIO</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div>
+                    <div style={{fontSize:9,color:'var(--text-dim)'}}>TOTAL VALUE</div>
+                    <div className="font-display" style={{fontSize:20,fontWeight:700,color:'#fff'}}>${portfolio.total_value?.toLocaleString()}</div>
+                </div>
+                <div>
+                    <div style={{fontSize:9,color:'var(--text-dim)'}}>P&L</div>
+                    <div className="font-display" style={{fontSize:20,fontWeight:700,color:pnlUp?'var(--accent-green)':'var(--accent-red)'}}>
+                        {pnlUp?'+':''}{portfolio.total_pnl?.toFixed(2)}
+                    </div>
+                </div>
+            </div>
+            <div style={{marginTop:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={{fontSize:9,color:'var(--text-dim)'}}>EXPOSURE</span>
+                    <span style={{fontSize:11,fontWeight:600,color:expColor}}>{portfolio.total_exposure_pct?.toFixed(1)}%</span>
+                </div>
+                <div style={{height:4,background:'#1a1a30',borderRadius:2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${expPct}%`,background:expColor,borderRadius:2,transition:'all .5s',
+                        boxShadow:`0 0 6px ${expColor}40`}}/>
+                </div>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:10,paddingTop:8,borderTop:'1px solid var(--border)'}}>
+                <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>{portfolio.open_positions_count}</div>
+                    <div style={{fontSize:8,color:'var(--text-dim)'}}>OPEN</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>{portfolio.total_trades}</div>
+                    <div style={{fontSize:8,color:'var(--text-dim)'}}>TRADES</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>${portfolio.cash?.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+                    <div style={{fontSize:8,color:'var(--text-dim)'}}>CASH</div>
+                </div>
+            </div>
+            {portfolio.circuit_breaker_active&&(
+                <div style={{marginTop:8,padding:'6px 8px',background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.25)',borderRadius:4}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'var(--accent-red)'}}>⊘ CIRCUIT BREAKER ACTIVE — TRADING HALTED</span>
+                </div>
+            )}
+        </div>
+    );
+}
+ 
+function OnChainPanel({data}){
+    const active=data.artifacts>0;
+    return(
+        <div style={{...card,padding:12,borderColor:active?'rgba(0,212,170,.2)':'var(--border)',
+            boxShadow:active?'0 0 15px var(--glow-cyan)':'none',transition:'all .5s'}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                <span style={{fontSize:12,color:'var(--accent-cyan)'}}>⬡</span>
+                <span style={{...label,color:'var(--accent-cyan)',margin:0}}>ON-CHAIN TRUST</span>
+                <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,marginLeft:'auto',
+                    background:active?'rgba(0,212,170,.1)':'rgba(85,85,112,.1)',
+                    color:active?'var(--accent-cyan)':'var(--text-dim)',
+                    border:`1px solid ${active?'rgba(0,212,170,.2)':'transparent'}`}}>
+                    {active?'ERC-8004 LIVE':'PENDING'}
+                </span>
+            </div>
+            {!active?(
+                <div style={{padding:'8px 0',textAlign:'center'}}>
+                    <p style={{fontSize:10,color:'var(--text-dim)'}}>Deploy contracts to enable on-chain verification</p>
+                    <p style={{fontSize:9,color:'#333',marginTop:4}}>Ethereum Sepolia Testnet</p>
+                </div>
+            ):(
+                <div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+                        <span style={{fontSize:9,color:'var(--text-dim)'}}>ARTIFACTS RECORDED</span>
+                        <span className="font-display" style={{fontSize:18,fontWeight:700,color:'var(--accent-cyan)'}}>{data.artifacts}</span>
+                    </div>
+                    <div style={{maxHeight:80,overflow:'auto'}}>
+                        {data.txLog.slice(-6).map((tx,i)=>(
+                            <div key={i} className="animate-slideUp" style={{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}}>
+                                <span style={{width:4,height:4,borderRadius:'50%',background:'var(--accent-cyan)',flexShrink:0}}/>
+                                <span style={{fontSize:9,color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tx.tx_hash}</span>
+                                {tx.explorer_link&&<a href={tx.explorer_link} target="_blank" rel="noopener" style={{fontSize:9,color:'var(--accent-cyan)',textDecoration:'none'}}>↗</a>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+ 
+function EventFeed({events}){
+    const ref=useRef(null);
+    useEffect(()=>{if(ref.current)ref.current.scrollTop=ref.current.scrollHeight;},[events]);
+    
+    const getStyle=(e)=>{
+        const t=e.event_type;
+        if(t==='risk_assessment') return e.data?.decision==='VETOED'?{icon:'⊘',color:'var(--accent-red)',bg:'rgba(239,68,68,.06)',border:'rgba(239,68,68,.2)'}:{icon:'✓',color:'var(--accent-green)',bg:'rgba(34,197,94,.04)',border:'rgba(34,197,94,.15)'};
+        if(t==='trade_proposal') return {icon:'◈',color:'var(--accent-blue)',bg:'rgba(68,136,255,.04)',border:'rgba(68,136,255,.12)'};
+        if(t==='trade_execution') return {icon:'◇',color:'var(--accent-purple)',bg:'rgba(168,85,247,.04)',border:'rgba(168,85,247,.12)'};
+        if(t==='compliance_check') return {icon:'□',color:'var(--accent-green)',bg:'rgba(34,197,94,.04)',border:'rgba(34,197,94,.12)'};
+        if(t==='audit_log') return {icon:'⬡',color:'var(--accent-cyan)',bg:'rgba(0,212,170,.04)',border:'rgba(0,212,170,.12)'};
+        if(t==='circuit_breaker') return {icon:'⊘',color:'var(--accent-red)',bg:'rgba(239,68,68,.06)',border:'rgba(239,68,68,.2)'};
+        return {icon:'·',color:'var(--text-dim)',bg:'transparent',border:'var(--border)'};
+    };
+    const fmt=(e)=>{
+        const d=e.data||{};
+        switch(e.event_type){
+            case 'trade_proposal':return `PROPOSE ${d.side} ${d.asset} · $${d.size_usd} · CONF ${(d.confidence*100).toFixed(0)}%`;
+            case 'risk_assessment':return `${d.decision} — ${d.reasoning?.substring(0,140)}`;
+            case 'trade_execution':return d.success?`FILLED @ $${d.executed_price?.toLocaleString()} · SLIP ${d.slippage_bps?.toFixed(1)}bps · FEE $${d.fees?.toFixed(2)}`:'SKIPPED — vetoed';
+            case 'compliance_check':return d.circuit_breaker_triggered?'⊘ CIRCUIT BREAKER TRIGGERED':!d.all_clear?`ALERT: ${d.alerts?.join(', ')}`:`CLEAR · EXP ${d.total_exposure_pct?.toFixed(1)}%`;
+            case 'audit_log':return `${d.artifacts_recorded} validation artifacts → chain`;
+            default:return JSON.stringify(d).substring(0,100);
+        }
+    };
+    return(
+        <div style={{...card,display:'flex',flexDirection:'column',height:'100%'}}>
+            <div style={{padding:'8px 12px',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={label}>EVENT FEED</span>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{width:5,height:5,borderRadius:'50%',background:events.length>0?'var(--accent-green)':'#333'}} className={events.length>0?'animate-pulse':''}/>
+                    <span style={{fontSize:9,color:'var(--text-dim)'}}>{events.length}</span>
+                </div>
+            </div>
+            <div ref={ref} style={{flex:1,overflow:'auto',padding:6}}>
+                {events.length===0&&(
+                    <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:8}}>
+                        <span style={{fontSize:24,opacity:.2}}>◈</span>
+                        <span style={{fontSize:11,color:'var(--text-dim)'}}>Awaiting first cycle...</span>
+                        <span style={{fontSize:9,color:'#333'}}>Press CYCLE or AUTO to begin</span>
+                    </div>
+                )}
+                {events.map((ev,i)=>{
+                    const s=getStyle(ev);
+                    const isVeto=ev.event_type==='risk_assessment'&&ev.data?.decision==='VETOED';
+                    return(
+                        <div key={ev.id||i} className="animate-slideUp" style={{
+                            padding:'7px 10px',marginBottom:3,borderRadius:4,borderLeft:`2px solid ${s.border}`,
+                            background:s.bg,transition:'background .3s'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                <span style={{fontSize:isVeto?13:11,color:s.color,fontWeight:700}}>{s.icon}</span>
+                                <span style={{fontSize:10,fontWeight:600,color:s.color}}>{AGENTS[ev.agent]?.name||ev.agent}</span>
+                                <span style={{fontSize:9,color:'#333',marginLeft:'auto'}}>{ev.timestamp?.split('T')[1]?.substring(0,8)}</span>
+                            </div>
+                            <p style={{fontSize:10,color:isVeto?'var(--accent-red)':'var(--text-secondary)',marginTop:3,lineHeight:1.4,
+                                fontWeight:isVeto?600:400}}>{fmt(ev)}</p>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+ 
+function ConnectionStatus({status}){
+    const s={connected:{c:'var(--accent-green)',t:'LIVE',bg:'rgba(34,197,94,.08)'},
+        connecting:{c:'var(--accent-amber)',t:'SYNC',bg:'rgba(245,158,11,.08)'},
+        disconnected:{c:'var(--accent-red)',t:'OFFLINE',bg:'rgba(239,68,68,.08)'}};
+    const st=s[status]||s.disconnected;
+    return(
+        <span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:3,
+            background:st.bg,border:`1px solid ${st.c}25`}}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:st.c}} className={status==='connecting'?'animate-pulse':''}/>
+            <span style={{fontSize:9,fontWeight:600,color:st.c,letterSpacing:'.08em'}}>{st.t}</span>
+        </span>
+    );
+}
+ 
+function App(){
+    const [ws,setWs]=useState('disconnected');
+    const [portfolio,setPortfolio]=useState(null);
+    const [market,setMarket]=useState(null);
+    const [events,setEvents]=useState([]);
+    const [statuses,setStatuses]=useState({strategist:'idle',risk_officer:'idle',executor:'idle',compliance:'idle',auditor:'idle'});
+    const [flow,setFlow]=useState(null);
+    const [running,setRunning]=useState(false);
+    const [cd,setCd]=useState(null);
+    const [last,setLast]=useState({});
+    const [chain,setChain]=useState({artifacts:0,txLog:[]});
+    const wsRef=useRef(null);
+ 
+    const connect=useCallback(()=>{
+        setWs('connecting');
+        const w=new WebSocket('ws://localhost:8000/ws');
+        w.onopen=()=>{setWs('connected');wsRef.current=w;};
+        w.onclose=()=>{setWs('disconnected');wsRef.current=null;setTimeout(connect,3000);};
+        w.onerror=()=>{setWs('disconnected');};
+        w.onmessage=(m)=>handle(JSON.parse(m.data));
+    },[]);
+ 
+    const handle=useCallback((m)=>{
+        switch(m.type){
+            case 'init':setPortfolio(m.data.portfolio);if(m.data.events)setEvents(m.data.events);break;
+            case 'market_data':setMarket(m.data);break;
+            case 'agent_event':
+                const e=m.data;
+                setEvents(p=>[...p,e]);
+                setStatuses(p=>({...p,[e.agent]:'acting'}));
+                setTimeout(()=>setStatuses(p=>({...p,[e.agent]:'idle'})),2500);
+                if(e.event_type==='trade_proposal'){setFlow('proposal');setLast(p=>({...p,strategist:`${e.data.side} ${e.data.asset} $${e.data.size_usd}`}));}
+                if(e.event_type==='risk_assessment'){
+                    if(e.data.decision==='VETOED'){setFlow('vetoed');setLast(p=>({...p,risk_officer:'⊘ VETOED — '+e.data.reasoning?.substring(0,60)}));}
+                    else{setFlow('risk');setLast(p=>({...p,risk_officer:'✓ APPROVED — Risk '+e.data.risk_score+'/10'}));}
+                }
+                if(e.event_type==='trade_execution'){setFlow('execute');if(e.data.success)setLast(p=>({...p,executor:`FILLED @ $${e.data.executed_price?.toLocaleString()}`}));}
+                if(e.event_type==='compliance_check'){setFlow('compliance');setLast(p=>({...p,compliance:e.data.all_clear?'✓ ALL CLEAR':'⚠ ALERT'}));}
+                if(e.event_type==='audit_log'){
+                    setFlow('audit');setLast(p=>({...p,auditor:`${e.data.artifacts_recorded} artifacts → chain`}));
+                    setChain(p=>({...p,artifacts:p.artifacts+(e.data.artifacts_recorded||0),
+                        txLog:[...p.txLog,...(e.data.tx_hashes||[]).map((h,i)=>({tx_hash:h,explorer_link:e.data.explorer_links?.[i]||''}))]}));
+                }
+                break;
+            case 'portfolio_update':setPortfolio(m.data);break;
+            case 'system':setRunning(m.data.running??running);break;
+            case 'countdown':setCd(m.data.seconds);break;
+            case 'cycle_start':setCd(null);setFlow(null);break;
+            case 'cycle_complete':setTimeout(()=>setFlow(null),3000);break;
+        }
+    },[running]);
+ 
+    useEffect(()=>{connect();},[connect]);
+    const send=(a,p={})=>{if(wsRef.current?.readyState===WebSocket.OPEN)wsRef.current.send(JSON.stringify({action:a,...p}));};
+ 
+    return(
+        <div style={{minHeight:'100vh',padding:16,maxWidth:1480,margin:'0 auto',position:'relative',zIndex:1}}>
+            {/* Header */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,paddingBottom:12,borderBottom:'1px solid var(--border)'}}>
+                <div>
+                    <h1 className="font-display" style={{fontSize:22,fontWeight:700,color:'#fff',letterSpacing:'-0.02em',margin:0}}>
+                        <span style={{color:'var(--accent-blue)'}}>CORTEX</span>
+                        <span style={{color:'var(--text-dim)',fontSize:13,fontWeight:400,marginLeft:10}}>Autonomous Trading Desk</span>
+                    </h1>
+                    <p style={{fontSize:9,color:'#333',marginTop:2,letterSpacing:'.08em'}}>ERC-8004 PROTOCOL · KRAKEN CLI · MULTI-AGENT ARCHITECTURE · ETHEREUM SEPOLIA</p>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <ConnectionStatus status={ws}/>
+                    {cd&&<span style={{fontSize:10,color:'var(--text-dim)'}}>NEXT {cd}s</span>}
+                    <button onClick={()=>send('cycle')} disabled={running||ws!=='connected'}
+                        style={{padding:'5px 14px',borderRadius:4,fontSize:10,fontWeight:600,fontFamily:'IBM Plex Mono',
+                            letterSpacing:'.06em',cursor:'pointer',border:'1px solid rgba(68,136,255,.3)',
+                            background:'rgba(68,136,255,.08)',color:'var(--accent-blue)',
+                            opacity:running||ws!=='connected'?.3:1,transition:'all .2s'}}>
+                        ▶ CYCLE
+                    </button>
+                    <button onClick={()=>running?send('stop'):send('start',{cycles:10,delay:15})} disabled={ws!=='connected'}
+                        style={{padding:'5px 14px',borderRadius:4,fontSize:10,fontWeight:600,fontFamily:'IBM Plex Mono',
+                            letterSpacing:'.06em',cursor:'pointer',
+                            border:`1px solid ${running?'rgba(239,68,68,.3)':'rgba(34,197,94,.3)'}`,
+                            background:running?'rgba(239,68,68,.08)':'rgba(34,197,94,.08)',
+                            color:running?'var(--accent-red)':'var(--accent-green)',
+                            opacity:ws!=='connected'?.3:1,transition:'all .2s'}}>
+                        {running?'⏹ HALT':'▶ AUTO'}
+                    </button>
+                </div>
+            </div>
+ 
+            {/* Market Ticker */}
+            <div style={{display:'flex',gap:10,marginBottom:10}}>
+                {market?.assets?Object.entries(market.assets).map(([a,d])=><MarketCard key={a} asset={a} data={d}/>)
+                :['BTC','ETH','SOL'].map(a=>(
+                    <div key={a} style={{...card,padding:12,flex:1}}>
+                        <span className="font-display" style={{fontSize:14,color:'#333'}}>{a}</span>
+                        <div style={{marginTop:6,height:24,background:'#111',borderRadius:3,width:'60%'}}/>
+                    </div>
+                ))}
+            </div>
+ 
+            {/* Pipeline */}
+            <div style={{marginBottom:10}}><Pipeline currentFlow={flow}/></div>
+ 
+            {/* Main Grid */}
+            <div style={{display:'grid',gridTemplateColumns:'280px 1fr 260px',gap:10,height:'calc(100vh - 310px)',minHeight:380}}>
+                {/* Left: Agents */}
+                <div style={{display:'flex',flexDirection:'column',gap:6,overflow:'auto'}}>
+                    <span style={{...label,paddingLeft:2}}>TRADING DESK</span>
+                    {Object.keys(AGENTS).map(r=><AgentRow key={r} role={r} status={statuses[r]} lastEvent={last[r]}/>)}
+                </div>
+ 
+                {/* Center: Events */}
+                <div><EventFeed events={events}/></div>
+ 
+                {/* Right: Portfolio + Chain */}
+                <div style={{display:'flex',flexDirection:'column',gap:8,overflow:'auto'}}>
+                    <Portfolio portfolio={portfolio}/>
+                    <OnChainPanel data={chain}/>
+                </div>
+            </div>
+ 
+            {/* Footer */}
+            <div style={{textAlign:'center',marginTop:10,padding:'8px 0',borderTop:'1px solid #111'}}>
+                <span style={{fontSize:8,color:'#2a2a40',letterSpacing:'.1em'}}>CORTEX v0.3 · AI TRADING AGENTS HACKATHON 2026 · LABLAB.AI</span>
+            </div>
+ 
+            {/* Disconnected Overlay */}
+            {ws==='disconnected'&&(
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,backdropFilter:'blur(4px)'}}>
+                    <div style={{...card,padding:'40px 48px',textAlign:'center',maxWidth:400,borderColor:'var(--border-active)'}}>
+                        <div style={{fontSize:32,marginBottom:16,opacity:.4}}>◈</div>
+                        <h2 className="font-display" style={{fontSize:18,fontWeight:700,color:'#fff',marginBottom:8}}>CORTEX OFFLINE</h2>
+                        <p style={{fontSize:12,color:'var(--text-secondary)',marginBottom:16}}>Start the API server:</p>
+                        <code style={{display:'block',background:'#080812',borderRadius:4,padding:'10px 16px',fontSize:12,color:'var(--accent-green)',marginBottom:12,border:'1px solid #1a1a30'}}>
+                            python api.py
+                        </code>
+                        <p style={{fontSize:9,color:'#333'}}>Auto-reconnecting...</p>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

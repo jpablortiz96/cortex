@@ -1,0 +1,13 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+deployment.json
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/

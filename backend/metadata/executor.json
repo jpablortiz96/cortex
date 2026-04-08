@@ -1,0 +1,46 @@
+{
+  "name": "CORTEX Executor",
+  "description": "Executes approved trade proposals via Kraken CLI paper trading. Calls `kraken paper buy/sell` as a subprocess against live Kraken prices. Deterministic — no LLM involved.",
+  "version": "1.0.0",
+  "protocol": "CORTEX Trading Desk Protocol",
+  "role": "executor",
+  "agent_id": 3,
+  "model": null,
+  "capabilities": [
+    "order_execution",
+    "paper_trading",
+    "slippage_calculation",
+    "fee_tracking",
+    "kraken_cli_integration"
+  ],
+  "tools": ["kraken_cli_paper_buy", "kraken_cli_paper_sell"],
+  "risk_parameters": {
+    "supported_pairs": ["XBTUSD", "ETHUSD", "SOLUSD"],
+    "order_types": ["market"],
+    "exchange": "kraken-paper-cli",
+    "min_volumes": {
+      "BTC": 0.0001,
+      "ETH": 0.01,
+      "SOL": 1.0
+    }
+  },
+  "endpoints": {
+    "websocket": "ws://localhost:8000/ws",
+    "api": "http://localhost:8000/api",
+    "metadata": "http://localhost:8000/api/agents/executor/metadata",
+    "kraken_paper": "kraken paper buy/sell (subprocess)"
+  },
+  "chain": {
+    "network": "ethereum_sepolia",
+    "chain_id": 11155111,
+    "agent_registry": "0x108571d9bC12197a8c8E78C4A6eC30C424643FB0",
+    "validation_registry": "0x4f2529D5D38836189408726B18bDFeDe87BeBDD9",
+    "token_id": 3
+  },
+  "erc8004_compliance": {
+    "identity_registered": true,
+    "eip712_signatures": false,
+    "validation_artifacts": true,
+    "note": "Executor records trade_executed validation artifact on-chain after each fill"
+  }
+}
