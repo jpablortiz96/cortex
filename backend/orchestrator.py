@@ -19,6 +19,7 @@ from tools.market_data import get_full_market_data
 from tools.web3_client import CortexWeb3Client
 from tools.eip712_signer import EIP712Signer
 from tools.erc8004_client import ERC8004Client
+from tools.hackathon_client import HackathonClient
 
 
 class PortfolioState:
@@ -93,6 +94,20 @@ class Orchestrator:
                 _reg = _json.load(_f)
             self._erc8004_agent_id = _reg.get('agent_id')
             print(f'[ERC-8004] Loaded agent_id={self._erc8004_agent_id} from registration')
+
+        # Official hackathon contracts client
+        _hack_path = _os.path.join(_os.path.dirname(__file__), 'hackathon_agent.json')
+        self._hack_agent_id = None
+        try:
+            self.hackathon = HackathonClient()
+            if _os.path.exists(_hack_path):
+                with open(_hack_path) as _hf:
+                    _hreg = _json.load(_hf)
+                self._hack_agent_id = _hreg.get('agent_id')
+                print(f'[HACKATHON] Loaded agent_id={self._hack_agent_id}')
+        except Exception as _he:
+            self.hackathon = None
+            print(f'[HACKATHON] Client init failed (non-fatal): {_he}')
 
         # Initialize agents
         self.strategist = StrategistAgent()
@@ -314,6 +329,26 @@ class Orchestrator:
                 print(f'[ERC-8004] Reputation signal sent: score={score} tag={tag1}/{tag2}')
             except Exception as _e:
                 print(f'[ERC-8004] Signal failed (non-fatal): {_e}')
+
+        # Official Hackathon: submit TradeIntent + checkpoint after every cycle
+        if self.hackathon and self._hack_agent_id:
+            try:
+                import asyncio as _aio
+                loop = _aio.get_event_loop()
+                decision = cycle_result.get('decision', 'HOLD')
+                asset = cycle_result.get('asset', 'BTC')
+                reasoning = cycle_result.get('reasoning', 'CORTEX multi-agent analysis')
+                if decision in ('BUY', 'SELL'):
+                    pair_map = {'BTC': 'XBTUSD', 'ETH': 'ETHUSD', 'SOL': 'SOLUSD'}
+                    pair = pair_map.get(asset.upper(), 'XBTUSD')
+                    await loop.run_in_executor(None, lambda: self.hackathon.submit_trade_intent(
+                        self._hack_agent_id, pair, decision, 100.0
+                    ))
+                await loop.run_in_executor(None, lambda: self.hackathon.post_checkpoint(
+                    self._hack_agent_id, decision, asset, str(reasoning)[:120], score=80
+                ))
+            except Exception as _he:
+                print(f'[HACKATHON] Cycle signal failed (non-fatal): {_he}')
 
         # Summary
         print(f"\n{'-'*40}")
