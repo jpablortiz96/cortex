@@ -162,6 +162,31 @@ RISK_ROUTER_ABI = [
             {"name": "windowStart", "type": "uint256"},
         ],
     },
+    {
+        "name": "simulateIntent",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [
+            {
+                "name": "intent",
+                "type": "tuple",
+                "components": [
+                    {"name": "agentId",         "type": "uint256"},
+                    {"name": "agentWallet",     "type": "address"},
+                    {"name": "pair",            "type": "string"},
+                    {"name": "action",          "type": "string"},
+                    {"name": "amountUsdScaled", "type": "uint256"},
+                    {"name": "maxSlippageBps",  "type": "uint256"},
+                    {"name": "nonce",           "type": "uint256"},
+                    {"name": "deadline",        "type": "uint256"},
+                ],
+            },
+        ],
+        "outputs": [
+            {"name": "approved", "type": "bool"},
+            {"name": "reason",   "type": "string"},
+        ],
+    },
 ]
 
 VALIDATION_ABI = [
@@ -183,6 +208,13 @@ VALIDATION_ABI = [
         "stateMutability": "view",
         "inputs": [{"name": "agentId", "type": "uint256"}],
         "outputs": [{"name": "", "type": "uint256"}],
+    },
+    {
+        "name": "openValidation",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"name": "", "type": "bool"}],
     },
 ]
 
@@ -260,13 +292,17 @@ class HackathonClient:
         nonce = self.w3.eth.get_transaction_count(self.account.address, "pending")
         block = self.w3.eth.get_block("latest")
         base_fee = block.get("baseFeePerGas", Web3.to_wei(10, "gwei"))
-        max_fee  = base_fee * 3 + Web3.to_wei(1, "gwei")
+        max_fee  = base_fee * 3 + Web3.to_wei(2, "gwei")
+        try:
+            gas = fn.estimate_gas({"from": self.account.address}) + 50_000
+        except Exception:
+            pass  # use caller-provided gas
         tx = fn.build_transaction({
             "from":                 self.account.address,
             "nonce":                nonce,
             "gas":                  gas,
             "maxFeePerGas":         max_fee,
-            "maxPriorityFeePerGas": Web3.to_wei(1, "gwei"),
+            "maxPriorityFeePerGas": Web3.to_wei(2, "gwei"),
             "chainId":              11155111,
         })
         signed  = self.w3.eth.account.sign_transaction(tx, self.account.key)
