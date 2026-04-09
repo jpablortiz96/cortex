@@ -59,11 +59,53 @@ async def on_agent_event(event: dict):
     })
 
 
+async def _auto_trader_loop():
+    """Background task: sends TradeIntents to hackathon RiskRouter every 7 min."""
+    import time
+    import json as _json
+    try:
+        from tools.hackathon_client import HackathonClient
+        client = HackathonClient()
+        reg_path = os.path.join(os.path.dirname(__file__), "hackathon_agent.json")
+        agent_id = 46
+        if os.path.exists(reg_path):
+            with open(reg_path) as f:
+                agent_id = _json.load(f).get("agent_id", 46)
+        print(f"[AUTO-TRADER] Started | agent_id={agent_id}")
+        rotation = [
+            ("XBTUSD","BUY",100.0),("ETHUSD","SELL",150.0),("SOLUSD","BUY",200.0),
+            ("XBTUSD","SELL",300.0),("ETHUSD","BUY",250.0),("SOLUSD","SELL",100.0),
+            ("XBTUSD","BUY",500.0),("ETHUSD","SELL",200.0),("SOLUSD","BUY",150.0),
+            ("XBTUSD","SELL",400.0),("ETHUSD","BUY",300.0),("SOLUSD","SELL",250.0),
+        ]
+        idx = 0
+        while True:
+            await asyncio.sleep(420)  # 7 minutes
+            try:
+                pair, action, amount = rotation[idx % len(rotation)]
+                idx += 1
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, lambda p=pair, a=action, amt=amount:
+                        client.submit_trade_intent(agent_id, p, a, amt)
+                )
+                print(f"[AUTO-TRADER] OK {action} {pair} ${amount} total={result['total_trades']}")
+            except Exception as e:
+                err = str(e)
+                print(f"[AUTO-TRADER] Error: {err[:100]}")
+                if "insufficient funds" in err.lower():
+                    print("[AUTO-TRADER] Low ETH — pausing 30 min")
+                    await asyncio.sleep(1800)
+    except Exception as e:
+        print(f"[AUTO-TRADER] Fatal init error: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     global orchestrator
     orchestrator = Orchestrator(initial_capital=10000.0)
     orchestrator.on_event = on_agent_event
+    asyncio.create_task(_auto_trader_loop())
 
 
 @app.get("/api/status")
