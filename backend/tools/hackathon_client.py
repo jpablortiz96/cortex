@@ -292,9 +292,12 @@ class HackathonClient:
         nonce = self.w3.eth.get_transaction_count(self.account.address, "pending")
         block = self.w3.eth.get_block("latest")
         base_fee = block.get("baseFeePerGas", Web3.to_wei(10, "gwei"))
-        max_fee  = base_fee * 3 + Web3.to_wei(2, "gwei")
+        # Use 1.5x base fee + 1 gwei priority — much cheaper than 3x
+        max_fee  = int(base_fee * 1.5) + Web3.to_wei(1, "gwei")
+        priority = Web3.to_wei(1, "gwei")
         try:
-            gas = fn.estimate_gas({"from": self.account.address}) + 50_000
+            estimated = fn.estimate_gas({"from": self.account.address})
+            gas = min(estimated + 20_000, gas)  # cap at caller-provided gas
         except Exception:
             pass  # use caller-provided gas
         tx = fn.build_transaction({
@@ -302,7 +305,7 @@ class HackathonClient:
             "nonce":                nonce,
             "gas":                  gas,
             "maxFeePerGas":         max_fee,
-            "maxPriorityFeePerGas": Web3.to_wei(2, "gwei"),
+            "maxPriorityFeePerGas": priority,
             "chainId":              11155111,
         })
         signed  = self.w3.eth.account.sign_transaction(tx, self.account.key)
@@ -418,7 +421,7 @@ class HackathonClient:
         print(f"[HACKATHON] Submitting TradeIntent: {action} {pair} ${amount_usd} nonce={nonce}...")
         tx_hash = self._send(
             self.router.functions.submitTradeIntent(intent_tuple, sig),
-            gas=300_000,
+            gas=150_000,
         )
         print(f"[HACKATHON] Intent submitted! tx={tx_hash}")
 
